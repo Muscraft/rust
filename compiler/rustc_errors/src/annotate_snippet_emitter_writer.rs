@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use std::io;
 use std::sync::Arc;
 
-use annotate_snippets::{AnnotationKind, Group, Padding, Patch, Renderer, Snippet};
+use annotate_snippets::{AnnotationKind, Group, Padding, Patch, Renderer, Snippet, debug_groups};
 use derive_setters::Setters;
 use rustc_data_structures::sync::IntoDynSyncSend;
 use rustc_error_messages::{FluentArgs, SpanLabel};
@@ -643,7 +643,8 @@ impl AnnotateSnippetEmitter {
         if !group.is_empty() {
             groups.push(group);
         }
-        info!("{groups:#?}");
+        //info!("{groups:#?}");
+        info!("{}", debug_groups(&groups, &renderer).unwrap());
         if let Err(e) =
             emit_to_destination(renderer.render(&groups), level, &mut self.dst, self.short_message)
         {

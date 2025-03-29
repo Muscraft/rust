@@ -28,6 +28,7 @@ use rustc_span::source_map::SourceMap;
 use rustc_span::{FileLines, FileName, SourceFile, Span, char_width, str_width};
 use tracing::{debug, info, instrument, trace, warn};
 
+use crate::annotate_snippet_emitter_writer::AnnotateSnippetEmitter;
 use crate::registry::Registry;
 use crate::snippet::{
     Annotation, AnnotationColumn, AnnotationType, Line, MultilineAnnotation, Style, StyledString,
@@ -647,20 +648,8 @@ pub(crate) struct FileWithAnnotatedLines {
 }
 
 impl HumanEmitter {
-    pub fn new(dst: Destination, translator: Translator) -> HumanEmitter {
-        HumanEmitter {
-            dst: IntoDynSyncSend(dst),
-            sm: None,
-            translator,
-            short_message: false,
-            ui_testing: false,
-            ignored_directories_in_source_blocks: Vec::new(),
-            diagnostic_width: None,
-            macro_backtrace: false,
-            track_diagnostics: false,
-            terminal_url: TerminalUrl::No,
-            theme: OutputTheme::Ascii,
-        }
+    pub fn new(dst: Destination, translator: Translator) -> AnnotateSnippetEmitter {
+        AnnotateSnippetEmitter::new(dst, translator)
     }
 
     fn maybe_anonymized(&self, line_num: usize) -> Cow<'static, str> {
