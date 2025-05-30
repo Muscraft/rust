@@ -713,7 +713,13 @@ impl HumanEmitter {
                 Style::LineNumber,
             );
         }
-        buffer.puts(line_offset, 0, &self.maybe_anonymized(line_index), Style::LineNumber);
+        let line_num = self.maybe_anonymized(line_index);
+        buffer.puts(
+            line_offset,
+            (width_offset - 3).saturating_sub(str_width(&line_num)),
+            &line_num,
+            Style::LineNumber,
+        );
 
         self.draw_col_separator_no_space(buffer, line_offset, width_offset - 2);
         left
