@@ -1994,7 +1994,9 @@ impl HumanEmitter {
     fn column_width(&self, code_offset: usize) -> usize {
         if let Some(width) = self.diagnostic_width {
             width.saturating_sub(code_offset)
-        } else if self.ui_testing || cfg!(miri) {
+        } else if self.ui_testing {
+            DEFAULT_COLUMN_WIDTH.saturating_sub(code_offset)
+        } else if cfg!(miri) {
             DEFAULT_COLUMN_WIDTH
         } else {
             termize::dimensions()
