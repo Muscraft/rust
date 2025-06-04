@@ -16,6 +16,7 @@ use std::iter;
 use std::path::Path;
 use std::sync::Arc;
 
+use anstream::stream::{AsLockedWrite, RawStream};
 use derive_setters::Setters;
 use rustc_data_structures::fx::{FxHashMap, FxIndexMap, FxIndexSet};
 use rustc_data_structures::sync::{DynSend, IntoDynSyncSend};
@@ -25,8 +26,7 @@ use rustc_lint_defs::pluralize;
 use rustc_span::hygiene::{ExpnKind, MacroKind};
 use rustc_span::source_map::SourceMap;
 use rustc_span::{FileLines, FileName, SourceFile, Span, char_width, str_width};
-use termcolor::{Buffer, BufferWriter, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use tracing::{debug, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::registry::Registry;
 use crate::snippet::{
@@ -598,18 +598,18 @@ pub enum ColorConfig {
 }
 
 impl ColorConfig {
-    pub fn to_color_choice(self) -> ColorChoice {
+    pub fn to_color_choice(self) -> anstream::ColorChoice {
         match self {
             ColorConfig::Always => {
                 if io::stderr().is_terminal() {
-                    ColorChoice::Always
+                    anstream::ColorChoice::Always
                 } else {
-                    ColorChoice::AlwaysAnsi
+                    anstream::ColorChoice::AlwaysAnsi
                 }
             }
-            ColorConfig::Never => ColorChoice::Never,
-            ColorConfig::Auto if io::stderr().is_terminal() => ColorChoice::Auto,
-            ColorConfig::Auto => ColorChoice::Never,
+            ColorConfig::Never => anstream::ColorChoice::Never,
+            ColorConfig::Auto if io::stderr().is_terminal() => anstream::ColorChoice::Auto,
+            ColorConfig::Auto => anstream::ColorChoice::Never,
         }
     }
 }
@@ -1589,13 +1589,18 @@ impl HumanEmitter {
             }
         }
         let mut annotated_files = FileWithAnnotatedLines::collect_annotations(self, args, msp);
-        trace!("{annotated_files:#?}");
+        info!("{annotated_files:#?}");
 
         // Make sure our primary file comes first
         let primary_span = msp.primary_span().unwrap_or_default();
         let (Some(sm), false) = (self.sm.as_ref(), primary_span.is_dummy()) else {
             // If we don't have span information, emit and exit
-            return emit_to_destination(&buffer.render(), level, &mut self.dst, self.short_message);
+            return emit_to_destination(
+                &buffer.render(level),
+                level,
+                &mut self.dst,
+                self.short_message,
+            );
         };
         let primary_lo = sm.lookup_char_pos(primary_span.lo());
         if let Ok(pos) =
@@ -1677,7 +1682,6 @@ impl HumanEmitter {
                 }
                 continue;
             }
-
             // print out the span location and spacer before we print the annotated source
             // to do this, we need to know if this span will be primary
             let is_primary = primary_lo.file.name == annotated_file.file.name;
@@ -1982,11 +1986,11 @@ impl HumanEmitter {
                     multilines.extend(&to_add);
                 }
             }
-            trace!("buffer: {:#?}", buffer.render());
+            trace!("buffer: {:#?}", buffer.render(level));
         }
 
         // final step: take our styled buffer, render it, then output it
-        emit_to_destination(&buffer.render(), level, &mut self.dst, self.short_message)?;
+        emit_to_destination(&buffer.render(level), level, &mut self.dst, self.short_message)?;
 
         Ok(())
     }
@@ -2467,7 +2471,7 @@ impl HumanEmitter {
             buffer.puts(row_num, max_line_num_len + 3, &msg, Style::NoStyle);
         }
 
-        emit_to_destination(&buffer.render(), level, &mut self.dst, self.short_message)?;
+        emit_to_destination(&buffer.render(level), level, &mut self.dst, self.short_message)?;
         Ok(())
     }
 
@@ -2517,7 +2521,7 @@ impl HumanEmitter {
                         }
                     }
                     if let Err(e) = emit_to_destination(
-                        &buffer.render(),
+                        &buffer.render(level),
                         level,
                         &mut self.dst,
                         self.short_message,
@@ -3085,7 +3089,7 @@ impl FileWithAnnotatedLines {
                 multiline_depth: 0,
             });
         }
-
+        info!("{msp:?}");
         let mut output = vec![];
         let mut multiline_annotations = vec![];
 
@@ -3319,7 +3323,7 @@ const OUTPUT_REPLACEMENTS: &[(char, &str)] = &[
     ('\u{2069}', "�"),
 ];
 
-fn normalize_whitespace(s: &str) -> String {
+pub(crate) fn normalize_whitespace(s: &str) -> String {
     const {
         let mut i = 1;
         while i < OUTPUT_REPLACEMENTS.len() {
@@ -3364,7 +3368,28 @@ fn overlaps(a1: &Annotation, a2: &Annotation, padding: usize) -> bool {
     )
 }
 
-fn emit_to_destination(
+pub trait WriteColor: io::Write {
+    fn supports_color(&self) -> bool;
+}
+
+impl<S: RawStream + AsLockedWrite> WriteColor for anstream::AutoStream<S> {
+    fn supports_color(&self) -> bool {
+        match self.current_choice() {
+            anstream::ColorChoice::Always
+            | anstream::ColorChoice::AlwaysAnsi
+            | anstream::ColorChoice::Auto => true,
+            anstream::ColorChoice::Never => false,
+        }
+    }
+}
+
+impl WriteColor for std::io::Sink {
+    fn supports_color(&self) -> bool {
+        false
+    }
+}
+
+pub(crate) fn emit_to_destination(
     rendered_buffer: &[Vec<StyledString>],
     lvl: &Level,
     dst: &mut Destination,
@@ -3387,10 +3412,8 @@ fn emit_to_destination(
     let _buffer_lock = lock::acquire_global_lock("rustc_errors");
     for (pos, line) in rendered_buffer.iter().enumerate() {
         for part in line {
-            let style = part.style.color_spec(*lvl);
-            dst.set_color(&style)?;
-            write!(dst, "{}", part.text)?;
-            dst.reset()?;
+            let style = part.style;
+            write!(dst, "{style}{}{style:#}", part.text)?;
         }
         if !short_message && (!lvl.is_failure_note() || pos != rendered_buffer.len() - 1) {
             writeln!(dst)?;
@@ -3403,8 +3426,8 @@ fn emit_to_destination(
 pub type Destination = Box<dyn WriteColor + Send>;
 
 struct Buffy {
-    buffer_writer: BufferWriter,
-    buffer: Buffer,
+    buffer_writer: anstream::Stderr,
+    buffer: Vec<u8>,
 }
 
 impl Write for Buffy {
@@ -3413,7 +3436,7 @@ impl Write for Buffy {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.buffer_writer.print(&self.buffer)?;
+        self.buffer_writer.write_all(&self.buffer)?;
         self.buffer.clear();
         Ok(())
     }
@@ -3430,15 +3453,12 @@ impl Drop for Buffy {
 
 impl WriteColor for Buffy {
     fn supports_color(&self) -> bool {
-        self.buffer.supports_color()
-    }
-
-    fn set_color(&mut self, spec: &ColorSpec) -> io::Result<()> {
-        self.buffer.set_color(spec)
-    }
-
-    fn reset(&mut self) -> io::Result<()> {
-        self.buffer.reset()
+        match self.buffer_writer.current_choice() {
+            anstream::ColorChoice::Always
+            | anstream::ColorChoice::AlwaysAnsi
+            | anstream::ColorChoice::Auto => true,
+            anstream::ColorChoice::Never => false,
+        }
     }
 }
 
@@ -3450,11 +3470,11 @@ pub fn stderr_destination(color: ColorConfig) -> Destination {
     //
     // On non-Windows we rely on the atomicity of `write` to ensure errors
     // don't get all jumbled up.
+    let buffer_writer = anstream::Stderr::new(std::io::stderr(), choice);
     if cfg!(windows) {
-        Box::new(StandardStream::stderr(choice))
+        Box::new(buffer_writer)
     } else {
-        let buffer_writer = BufferWriter::stderr(choice);
-        let buffer = buffer_writer.buffer();
+        let buffer = Vec::new();
         Box::new(Buffy { buffer_writer, buffer })
     }
 }
@@ -3462,49 +3482,38 @@ pub fn stderr_destination(color: ColorConfig) -> Destination {
 /// On Windows, BRIGHT_BLUE is hard to read on black. Use cyan instead.
 ///
 /// See #36178.
-const BRIGHT_BLUE: Color = if cfg!(windows) { Color::Cyan } else { Color::Blue };
+const BRIGHT_BLUE: anstyle::Style = if cfg!(windows) {
+    anstyle::AnsiColor::BrightCyan.on_default()
+} else {
+    anstyle::AnsiColor::BrightBlue.on_default()
+};
 
 impl Style {
-    fn color_spec(&self, lvl: Level) -> ColorSpec {
-        let mut spec = ColorSpec::new();
+    pub(crate) fn anstyle(&self, lvl: Level) -> anstyle::Style {
         match self {
-            Style::Addition => {
-                spec.set_fg(Some(Color::Green)).set_intense(true);
+            Style::Addition => anstyle::AnsiColor::BrightGreen.on_default(),
+            Style::Removal => anstyle::AnsiColor::BrightRed.on_default(),
+            Style::LineAndColumn => anstyle::Style::new(),
+            Style::LineNumber => BRIGHT_BLUE.effects(anstyle::Effects::BOLD),
+            Style::Quotation => anstyle::Style::new(),
+            Style::MainHeaderMsg => if cfg!(windows) {
+                anstyle::AnsiColor::BrightWhite.on_default()
+            } else {
+                anstyle::Style::new()
             }
-            Style::Removal => {
-                spec.set_fg(Some(Color::Red)).set_intense(true);
-            }
-            Style::LineAndColumn => {}
-            Style::LineNumber => {
-                spec.set_bold(true);
-                spec.set_intense(true);
-                spec.set_fg(Some(BRIGHT_BLUE));
-            }
-            Style::Quotation => {}
-            Style::MainHeaderMsg => {
-                spec.set_bold(true);
-                if cfg!(windows) {
-                    spec.set_intense(true).set_fg(Some(Color::White));
-                }
-            }
+            .effects(anstyle::Effects::BOLD),
             Style::UnderlinePrimary | Style::LabelPrimary => {
-                spec = lvl.color();
-                spec.set_bold(true);
+                lvl.color().effects(anstyle::Effects::BOLD)
             }
             Style::UnderlineSecondary | Style::LabelSecondary => {
-                spec.set_bold(true).set_intense(true);
-                spec.set_fg(Some(BRIGHT_BLUE));
+                BRIGHT_BLUE.effects(anstyle::Effects::BOLD)
             }
-            Style::HeaderMsg | Style::NoStyle => {}
-            Style::Level(lvl) => {
-                spec = lvl.color();
-                spec.set_bold(true);
-            }
+            Style::HeaderMsg | Style::NoStyle => anstyle::Style::new(),
+            Style::Level(lvl) => lvl.color().effects(anstyle::Effects::BOLD),
             Style::Highlight => {
-                spec.set_bold(true).set_fg(Some(Color::Magenta));
+                anstyle::AnsiColor::Magenta.on_default().effects(anstyle::Effects::BOLD)
             }
         }
-        spec
     }
 }
 

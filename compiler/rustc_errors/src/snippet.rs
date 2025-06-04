@@ -192,7 +192,7 @@ impl Annotation {
 #[derive(Debug)]
 pub(crate) struct StyledString {
     pub text: String,
-    pub style: Style,
+    pub style: anstyle::Style,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Encodable, Decodable)]

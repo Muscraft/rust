@@ -15,6 +15,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::vec;
 
+use anstream::AutoStream;
 use derive_setters::Setters;
 use rustc_data_structures::sync::IntoDynSyncSend;
 use rustc_error_messages::FluentArgs;
@@ -23,12 +24,11 @@ use rustc_span::Span;
 use rustc_span::hygiene::ExpnData;
 use rustc_span::source_map::{FilePathMapping, SourceMap};
 use serde::Serialize;
-use termcolor::{ColorSpec, WriteColor};
 
 use crate::diagnostic::IsLint;
 use crate::emitter::{
     ColorConfig, Destination, Emitter, HumanEmitter, HumanReadableErrorType, OutputTheme,
-    TimingEvent, should_show_source_code,
+    TimingEvent, WriteColor, should_show_source_code,
 };
 use crate::registry::Registry;
 use crate::timings::{TimingRecord, TimingSection};
@@ -333,8 +333,8 @@ impl Diagnostic {
         // generate regular command line output and store it in the json
 
         // A threadsafe buffer for writing.
-        #[derive(Default, Clone)]
-        struct BufWriter(Arc<Mutex<Vec<u8>>>);
+        #[derive(Clone)]
+        struct BufWriter(Arc<Mutex<AutoStream<Vec<u8>>>>);
 
         impl Write for BufWriter {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -344,17 +344,15 @@ impl Diagnostic {
                 self.0.lock().unwrap().flush()
             }
         }
+
         impl WriteColor for BufWriter {
             fn supports_color(&self) -> bool {
-                false
-            }
-
-            fn set_color(&mut self, _spec: &ColorSpec) -> io::Result<()> {
-                Ok(())
-            }
-
-            fn reset(&mut self) -> io::Result<()> {
-                Ok(())
+                match self.0.lock().unwrap().current_choice() {
+                    anstream::ColorChoice::Always
+                    | anstream::ColorChoice::AlwaysAnsi
+                    | anstream::ColorChoice::Auto => true,
+                    anstream::ColorChoice::Never => false,
+                }
             }
         }
 
@@ -382,13 +380,12 @@ impl Diagnostic {
             children
                 .insert(0, Diagnostic::from_sub_diagnostic(&diag.emitted_at_sub_diag(), &args, je));
         }
-        let buf = BufWriter::default();
-        let mut dst: Destination = Box::new(buf.clone());
+        let buf = BufWriter(Arc::new(Mutex::new(AutoStream::new(
+            Vec::new(),
+            je.color_config.to_color_choice(),
+        ))));
         let short = je.json_rendered.short();
-        match je.color_config {
-            ColorConfig::Always | ColorConfig::Auto => dst = Box::new(termcolor::Ansi::new(dst)),
-            ColorConfig::Never => {}
-        }
+        let dst: Destination = Box::new(buf.clone());
         HumanEmitter::new(dst, je.translator.clone())
             .short_message(short)
             .sm(je.sm.clone())
@@ -405,7 +402,7 @@ impl Diagnostic {
             })
             .emit_diagnostic(diag, registry);
         let buf = Arc::try_unwrap(buf.0).unwrap().into_inner().unwrap();
-        let buf = String::from_utf8(buf).unwrap();
+        let buf = String::from_utf8(buf.into_inner()).unwrap();
 
         Diagnostic {
             message: translated_message.to_string(),

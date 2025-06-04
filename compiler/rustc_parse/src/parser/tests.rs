@@ -13,7 +13,7 @@ use rustc_ast::token::{self, Delimiter, Token};
 use rustc_ast::tokenstream::{DelimSpacing, DelimSpan, Spacing, TokenStream, TokenTree};
 use rustc_ast::{self as ast, PatKind, visit};
 use rustc_ast_pretty::pprust::item_to_string;
-use rustc_errors::emitter::{HumanEmitter, OutputTheme};
+use rustc_errors::emitter::{HumanEmitter, OutputTheme, WriteColor};
 use rustc_errors::translation::Translator;
 use rustc_errors::{DiagCtxt, MultiSpan, PResult};
 use rustc_session::parse::ParseSess;
@@ -21,7 +21,6 @@ use rustc_span::source_map::{FilePathMapping, SourceMap};
 use rustc_span::{
     BytePos, FileName, Pos, Span, Symbol, create_default_session_globals_then, kw, sym,
 };
-use termcolor::WriteColor;
 
 use crate::parser::{ForceCollect, Parser};
 use crate::{new_parser_from_source_str, source_str_to_stream, unwrap_or_emit_fatal};
@@ -162,14 +161,6 @@ struct Shared<T: Write> {
 impl<T: Write> WriteColor for Shared<T> {
     fn supports_color(&self) -> bool {
         false
-    }
-
-    fn set_color(&mut self, _spec: &termcolor::ColorSpec) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn reset(&mut self) -> io::Result<()> {
-        Ok(())
     }
 }
 

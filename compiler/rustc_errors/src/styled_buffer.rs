@@ -1,5 +1,6 @@
 // Code for creating styled buffers
 
+use crate::Level;
 use crate::snippet::{Style, StyledString};
 
 #[derive(Debug)]
@@ -27,7 +28,7 @@ impl StyledBuffer {
     }
 
     /// Returns content of `StyledBuffer` split by lines and line styles
-    pub(crate) fn render(&self) -> Vec<Vec<StyledString>> {
+    pub(crate) fn render(&self, lvl: &Level) -> Vec<Vec<StyledString>> {
         // Tabs are assumed to have been replaced by spaces in calling code.
         debug_assert!(self.lines.iter().all(|r| !r.iter().any(|sc| sc.chr == '\t')));
 
@@ -35,15 +36,16 @@ impl StyledBuffer {
         let mut styled_vec: Vec<StyledString> = vec![];
 
         for styled_line in &self.lines {
-            let mut current_style = Style::NoStyle;
+            let mut current_style = anstyle::Style::new();
             let mut current_text = String::new();
 
             for sc in styled_line {
-                if sc.style != current_style {
+                let style = sc.style.anstyle(*lvl);
+                if style != current_style {
                     if !current_text.is_empty() {
                         styled_vec.push(StyledString { text: current_text, style: current_style });
                     }
-                    current_style = sc.style;
+                    current_style = style;
                     current_text = String::new();
                 }
                 current_text.push(sc.chr);
