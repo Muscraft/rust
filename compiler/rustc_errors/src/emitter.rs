@@ -750,13 +750,7 @@ impl HumanEmitter {
         //   |  vertical divider between the column number and the code
         //   column number
 
-        if line.line_index == 0 {
-            return Vec::new();
-        }
-
-        let Some(source_string) = file.get_line(line.line_index - 1) else {
-            return Vec::new();
-        };
+        let source_string = file.get_line(line.line_index - 1).unwrap_or_default();
         trace!(?source_string);
 
         let line_offset = buffer.num_lines();
@@ -1691,13 +1685,17 @@ impl HumanEmitter {
                     // remember where we are in the output buffer for easy reference
                     let buffer_msg_line_offset = buffer.num_lines();
 
+                    let mut line = sm.doctest_offset_line(&loc.file.name, loc.line);
+                    if line == 0 {
+                        line += 1;
+                    }
                     buffer.prepend(buffer_msg_line_offset, self.file_start(), Style::LineNumber);
                     buffer.append(
                         buffer_msg_line_offset,
                         &format!(
                             "{}:{}:{}",
                             sm.filename_for_diagnostics(&loc.file.name),
-                            sm.doctest_offset_line(&loc.file.name, loc.line),
+                            line,
                             loc.col.0 + 1,
                         ),
                         Style::LineAndColumn,
