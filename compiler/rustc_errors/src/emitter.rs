@@ -2461,12 +2461,13 @@ impl HumanEmitter {
             }
         }
         if other_suggestions > 0 {
+            self.draw_note_separator(&mut buffer, row_num, max_line_num_len + 1, false);
             let msg = format!(
                 "and {} other candidate{}",
                 other_suggestions,
                 pluralize!(other_suggestions)
             );
-            buffer.puts(row_num, max_line_num_len + 3, &msg, Style::NoStyle);
+            buffer.append(row_num, &msg, Style::NoStyle);
         }
 
         emit_to_destination(&buffer.render(level), level, &mut self.dst, self.short_message)?;

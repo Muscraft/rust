@@ -419,7 +419,7 @@ mod foo {
    \u001b[1m\u001b[94m|\u001b[0m
 \u001b[1m\u001b[94mLL\u001b[0m \u001b[92m+ use std::collections::hash_map::Iter;\u001b[0m
    \u001b[1m\u001b[94m|\u001b[0m
-     and 9 other candidates
+   \u001b[1m\u001b[94m= \u001b[0mand 9 other candidates
 
 "
 }
