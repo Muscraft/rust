@@ -3,6 +3,7 @@ error[E0404]: expected trait, found struct `String`
    |
 LL | struct Foo<T> where T: Bar, <T as Bar>::Baz: String {
    |                                              ^^^^^^ not a trait
+   |
   --> $SRC_DIR/alloc/src/string.rs:LL:COL
    |
    = note: similarly named trait `ToString` defined here
@@ -22,6 +23,7 @@ error[E0404]: expected trait, found struct `String`
    |
 LL | struct Qux<'a, T> where T: Bar, <&'a T as Bar>::Baz: String {
    |                                                      ^^^^^^ not a trait
+   |
   --> $SRC_DIR/alloc/src/string.rs:LL:COL
    |
    = note: similarly named trait `ToString` defined here
@@ -41,6 +43,7 @@ error[E0404]: expected trait, found struct `String`
    |
 LL | fn foo<T: Bar>(_: T) where <T as Bar>::Baz: String {
    |                                             ^^^^^^ not a trait
+   |
   --> $SRC_DIR/alloc/src/string.rs:LL:COL
    |
    = note: similarly named trait `ToString` defined here
@@ -60,6 +63,7 @@ error[E0404]: expected trait, found struct `String`
    |
 LL | fn qux<'a, T: Bar>(_: &'a T) where <&'a T as Bar>::Baz: String {
    |                                                         ^^^^^^ not a trait
+   |
   --> $SRC_DIR/alloc/src/string.rs:LL:COL
    |
    = note: similarly named trait `ToString` defined here
@@ -85,6 +89,7 @@ error[E0404]: expected trait, found struct `String`
    |
 LL | fn issue_95327() where <u8 as Unresolved>::Assoc: String {}
    |                                                   ^^^^^^ help: a trait with a similar name exists: `ToString`
+   |
   --> $SRC_DIR/alloc/src/string.rs:LL:COL
    |
    = note: similarly named trait `ToString` defined here
