@@ -1305,7 +1305,7 @@ fn default_emitter(sopts: &config::Options, source_map: Arc<SourceMap>) -> Box<D
 
     match sopts.error_format {
         config::ErrorOutputType::HumanReadable { kind, color_config } => match kind {
-            HumanReadableErrorType { short, unicode } => {
+            HumanReadableErrorType { no_graphics, short, unicode } => {
                 let emitter = AnnotateSnippetEmitter::new(stderr_destination(color_config))
                     .sm(source_map)
                     .short_message(short)
@@ -1316,7 +1316,8 @@ fn default_emitter(sopts: &config::Options, source_map: Arc<SourceMap>) -> Box<D
                     .theme(if unicode { OutputTheme::Unicode } else { OutputTheme::Ascii })
                     .ignored_directories_in_source_blocks(
                         sopts.unstable_opts.ignore_directory_in_diagnostics_source_blocks.clone(),
-                    );
+                    )
+                    .no_graphics(no_graphics);
                 Box::new(emitter.ui_testing(sopts.unstable_opts.ui_testing))
             }
         },
@@ -1919,10 +1920,11 @@ impl EarlyDiagCtxt {
 fn mk_emitter(output: ErrorOutputType) -> Box<DynEmitter> {
     let emitter: Box<DynEmitter> = match output {
         config::ErrorOutputType::HumanReadable { kind, color_config } => match kind {
-            HumanReadableErrorType { short, unicode } => Box::new(
+            HumanReadableErrorType { no_graphics, short, unicode } => Box::new(
                 AnnotateSnippetEmitter::new(stderr_destination(color_config))
                     .theme(if unicode { OutputTheme::Unicode } else { OutputTheme::Ascii })
-                    .short_message(short),
+                    .short_message(short)
+                    .no_graphics(no_graphics),
             ),
         },
         config::ErrorOutputType::Json { pretty, json_rendered, color_config } => {
